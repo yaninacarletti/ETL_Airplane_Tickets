@@ -21,7 +21,9 @@ Expuesto en el port: 8888
 
 Para correrlo se deben crear las siguientes carpetas en las rutas especificadas:
 
-![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/5e6454e2-2d6a-4398-9502-9fffea528862)
+![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/cd251328-ee38-4109-8de6-7a65c7d134cc)
+
+
 
 
 
@@ -29,10 +31,13 @@ Se debe además descargar el driver: 'postgresql-42.5.2.jar' y ubicarlo en la ca
 
 Se debe crear el archivo '.env' con las siguientes variables de entorno y ubicarlo en la carpeta indicada acontinuación: 
 
-![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/347e9543-49a0-413b-9dec-62c32fb9317e)
+![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/e02d4928-3025-4e10-8924-cc846c86a6ac)
 
 
-![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/f1cfd711-50bc-44f4-b503-ae6fa1433667)
+
+![image](https://github.com/yaninacarletti/ETL_Airplane_Tickets/assets/97068537/6ef56b88-dcf6-4db4-af04-01e7bd877ec7)
+
+
 
 
 Finalmente, para ejecutar el Docker Compose, ejecutar el siguiente comando:
