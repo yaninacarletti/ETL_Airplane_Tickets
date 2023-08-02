@@ -2,6 +2,7 @@ from airflow import DAG
 
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow_common.operators.redshift_custom_operator import PostgreSQLOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.utils.task_group import TaskGroup
@@ -22,7 +23,7 @@ env['KAGGLE_USERNAME']
 env['KAGGLE_KEY']
 
 TZ = pytz.timezone('America/Buenos_Aires')
-PROCESS_DATE = datetime.now(TZ).strftime('%Y-%m-%d')
+PROCESS_DATE = datetime.now(TZ).strftime('%Y-%m-%d') 
 
 # Función para autenticarse en Kaggle y descargar archivo
 def _authenticate_and_download(path):
@@ -47,9 +48,9 @@ def _sampling_and_profiling(json_path, html_path):
     profile.to_file(html_path)
     return print("Done")
 
-# create function to get process_date and push it to xcom
+# Función para obtener process_date y enviarlo a xcom
 def _get_process_date(**kwargs):
-    # If process_date is provided take it, otherwise take today
+    # Si se proporciona la fecha del proceso, tómela, de lo contrario, tómela hoy.
     if (
         "process_date" in kwargs["dag_run"].conf
         and kwargs["dag_run"].conf["process_date"] is not None
@@ -79,7 +80,6 @@ CREATE TABLE IF NOT EXISTS {env['REDSHIFT_SCHEMA']}.airplane_tickets (
     flightable BOOLEAN,
     iata_type VARCHAR(12),
     airport_name VARCHAR(50),
-    airport_name_translations VARCHAR(100),
     airport_latitude DECIMAL(10,2),
     airport_longitude DECIMAL(10,2),
     process_date VARCHAR(12)
@@ -171,12 +171,12 @@ with DAG(
         )   
         get_process_date_task >>  clean_process_date
 
-    data_load = PostgresOperator(
-        task_id="data_load",
-        postgres_conn_id="redshift_default",
-        sql= "/opt/airflow/tmp/data/airplane_tickets_{}.sql".format(PROCESS_DATE),
-        dag = dag
-    )
+    data_load = PostgreSQLOperator(
+            task_id="data_load",
+            postgres_conn_id="redshift_default",
+            sql= 'sql/airplane_tickets_{}.sql'.format(PROCESS_DATE)
+            # dag = dag
+        )
 
 GF >> DQ >> create_table >> RC >> data_load
 
@@ -206,23 +206,15 @@ GF >> DQ >> create_table >> RC >> data_load
 
 
 
+ 
 
-
-
-
-
-
-   # data_load = SparkSubmitOperator(
+    # data_load = SparkSubmitOperator(
     #     task_id="data_load",
     #     application=f'{Variable.get("spark_scripts_dir")}/data_load.py',
     #     conn_id="spark_default",
     #     dag=dag,
     #     driver_class_path=Variable.get("driver_class_path"),
     # )
-
-
-
-
 
 
 

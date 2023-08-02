@@ -16,7 +16,8 @@ env['SPARK_CLASSPATH'] = DRIVER_PATH
 
 TZ = pytz.timezone('America/Buenos_Aires')
 PROCESS_DATE = datetime.now(TZ).strftime('%Y-%m-%d')
-INSERTION_SCRIPT_PATH = "/opt/airflow/tmp/data/airplane_tickets_{}.sql".format(PROCESS_DATE)
+# INSERTION_SCRIPT_PATH = "/opt/airflow/tmp/data/airplane_tickets_{}.sql".format(PROCESS_DATE)
+INSERTION_SCRIPT_PATH = "/opt/airflow/dags/sql/airplane_tickets_{}.sql".format(PROCESS_DATE)
 
 # Crear sesión de Spark
 spark = (
@@ -45,7 +46,6 @@ fact_df1 = fact_df1.withColumn("number_of_changes", f.col("number_of_changes").c
 
 # Dropeo de columnas
 fact_df1 = fact_df1.drop('trip_class')
-# fact_df1 = fact_df1.drop('_corrupt_record')
 
 # Dropeo de filas duplicadas
 fact_df1 = fact_df1.dropDuplicates()
@@ -58,12 +58,12 @@ with open(r"/opt/airflow/tmp/data/IATA_Airports.json") as file:
 pandasdf2 =pd.json_normalize(dic2)
 dim_df2 = spark.createDataFrame(pandasdf2)
 
-#Dropeo de la columna 'city_code'
+#Dropeo de columnas
 dim_df2 = dim_df2.drop("city_code")
+dim_df2 = dim_df2.drop("name")
 
 # Renombramiento de columnas
-dim_df2 = dim_df2.withColumnRenamed("name", "airport_name")
-dim_df2 = dim_df2.withColumnRenamed("name_translations.en", "airport_name_translations")
+dim_df2 = dim_df2.withColumnRenamed("name_translations.en", "airport_name")
 dim_df2 = dim_df2.withColumnRenamed("coordinates.lat", "airport_latitude")
 dim_df2 = dim_df2.withColumnRenamed("coordinates.lon", "airport_longitude")
 
@@ -94,9 +94,6 @@ sparkdf = merged_df.join(dim_df2, merged_df.destination == dim_df2.code, "inner"
 # Dropeo de la columna 'code'
 sparkdf = sparkdf.drop("code")
 
-# Eliminación de registros nulos asociados a la columna 'airport_name'
-sparkdf = sparkdf.na.drop(subset= "airport_name")
-
 # Creación de la columna 'Class' (función de la columna 'Value')
 sparkdf = sparkdf.withColumn("class", \
    f.when((sparkdf.value > 100000), f.lit("A")) \
@@ -104,12 +101,23 @@ sparkdf = sparkdf.withColumn("class", \
      .otherwise(f.lit("C")) \
   )
 
-# Función definida por el usuario "replace_character" e implementada en la columna 'time_zone'
-replace_character = f.udf(lambda x: x.replace("/","-"), StringType())
-sparkdf = sparkdf.withColumn("time_zone", replace_character("time_zone"))
+# Función definida por el usuario "replace_character" e implementada en las columnas 'found_at', 'airport_name', 
+# 'airline_name_translations' y 'destination'
+replace_character = f.udf(lambda x: x.replace("-","/"), StringType())
+sparkdf = sparkdf.withColumn("found_at", replace_character("found_at"))
+
+replace_character = f.udf(lambda x: x.replace("'"," "), StringType())
+sparkdf = sparkdf.withColumn("airport_name", replace_character("airport_name"))
+
+replace_character = f.udf(lambda x: x.replace("'"," "), StringType())
+sparkdf = sparkdf.withColumn("airline_name_translations", replace_character("airline_name_translations"))
+
+replace_character = f.udf(lambda x: x.replace("ТАУ","ТАY"), StringType())
+sparkdf = sparkdf.withColumn("destination", replace_character("destination"))
+
 
 # Filtro basado en la columna "number_of_changes"
-sparkdf = sparkdf.filter(sparkdf.number_of_changes < 5)
+sparkdf = sparkdf.filter(sparkdf.number_of_changes < 1)
 
 # añadir columna "process_date"
 sparkdf = sparkdf.withColumn("process_date", f.lit(PROCESS_DATE))
@@ -119,21 +127,21 @@ sparkdf = sparkdf.select("found_at", "class", "value", "number_of_changes",\
                          "depart_date", "search_date", "airline_code", "airline_name_translations",\
                          "origin", "destination", "country_code", \
                          "time_zone", "flightable", "iata_type", "airport_name", \
-                         "airport_name_translations", "airport_latitude","airport_longitude","process_date")
+                         "airport_latitude","airport_longitude","process_date")
 
 sparkdf.printSchema()
 sparkdf.show(truncate = False)
 
+# Generación del script de sql para la inserción de datos en la tabla 'airplane_tickets'
 print("Generando script INSERT...")
-
 pandasdf = sparkdf.toPandas()
 
 with open (INSERTION_SCRIPT_PATH, 'w') as f:
     for index, row in pandasdf.iterrows():
-        values = f"('{row['found_at']}', {row['class']}, {row['value']}, {row['number_of_changes']},\
-         '{row['depart_date']}', '{row['search_date']}', {row['airline_code']}, {row['airline_name_translations']},\
-          {row['origin']}, {row['destination']}, {row['country_code']}, {row['time_zone']}, {row['flightable']},\
-           {row['iata_type']}, {row['airport_name']}, {row['airport_name_translations']},\
+        values = f"('{row['found_at']}', '{row['class']}', {row['value']}, {row['number_of_changes']},\
+         '{row['depart_date']}', '{row['search_date']}', '{row['airline_code']}',\
+          '{row['airline_name_translations']}', '{row['origin']}', '{row['destination']}', '{row['country_code']}',\
+           '{row['time_zone']}', {row['flightable']}, '{row['iata_type']}', '{row['airport_name']}',\
             {row['airport_latitude']}, {row['airport_longitude']}, '{row['process_date']}')"
         insert = f"INSERT INTO {env['REDSHIFT_SCHEMA']}.airplane_tickets VALUES {values};\n"
         f.write(insert)
