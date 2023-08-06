@@ -1,9 +1,7 @@
 apache-airflow-providers-apache-spark
 apache-airflow[amazon]
 apache-airflow-providers-amazon
-yfinance
 apache-airflow[postgres]
-psycopg2-binary
 pandas-profiling
 kaggle
 

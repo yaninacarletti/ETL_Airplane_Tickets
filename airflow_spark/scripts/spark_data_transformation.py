@@ -1,12 +1,12 @@
 from os import environ as env
-from psycopg2 import connect
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as f
+from pyspark.sql.functions import col, lit, when, udf 
 from pyspark.sql.types import *
 import pandas as pd
 import json
 from datetime import datetime
 import pytz
+import random
 
 
 DRIVER_PATH = env["DRIVER_PATH"]
@@ -42,7 +42,7 @@ fact_df1 = spark.createDataFrame(pandasdf1)
 # fact_df1 = fact_df1.withColumn("search_date", f.col("search_date").cast(DateType()))
 # fact_df1 = fact_df1.withColumn("depart_date", f.col("depart_date").cast(DateType()))
 # fact_df1 = fact_df1.withColumn("found_at", f.col("found_at").cast(TimestampType()))
-fact_df1 = fact_df1.withColumn("number_of_changes", f.col("number_of_changes").cast(IntegerType()))
+fact_df1 = fact_df1.withColumn("number_of_changes", col("number_of_changes").cast(IntegerType()))
 
 # Dropeo de columnas
 fact_df1 = fact_df1.drop('trip_class')
@@ -96,31 +96,34 @@ sparkdf = sparkdf.drop("code")
 
 # Creación de la columna 'Class' (función de la columna 'Value')
 sparkdf = sparkdf.withColumn("class", \
-   f.when((sparkdf.value > 100000), f.lit("A")) \
-     .when((sparkdf.value >= 15000) & (sparkdf.value <= 100000), f.lit("B")) \
-     .otherwise(f.lit("C")) \
+   when((sparkdf.value > 100000), lit("A")) \
+     .when((sparkdf.value >= 15000) & (sparkdf.value <= 100000), lit("B")) \
+     .otherwise(lit("C")) \
   )
 
 # Función definida por el usuario "replace_character" e implementada en las columnas 'found_at', 'airport_name', 
 # 'airline_name_translations' y 'destination'
-replace_character = f.udf(lambda x: x.replace("-","/"), StringType())
+replace_character = udf(lambda x: x.replace("-","/"), StringType())
 sparkdf = sparkdf.withColumn("found_at", replace_character("found_at"))
 
-replace_character = f.udf(lambda x: x.replace("'"," "), StringType())
+replace_character = udf(lambda x: x.replace("'"," "), StringType())
 sparkdf = sparkdf.withColumn("airport_name", replace_character("airport_name"))
 
-replace_character = f.udf(lambda x: x.replace("'"," "), StringType())
+replace_character = udf(lambda x: x.replace("'"," "), StringType())
 sparkdf = sparkdf.withColumn("airline_name_translations", replace_character("airline_name_translations"))
 
-replace_character = f.udf(lambda x: x.replace("ТАУ","ТАY"), StringType())
+replace_character = udf(lambda x: x.replace("ТАУ","ТАY"), StringType())
 sparkdf = sparkdf.withColumn("destination", replace_character("destination"))
 
 
-# Filtro basado en la columna "number_of_changes"
-sparkdf = sparkdf.filter(sparkdf.number_of_changes < 1)
+# Filtro basado en la columna "origin"
+sparkdf = sparkdf.filter(sparkdf.origin == 'MOW')
+
+# La siguiente línea comentarla (o no) si se quiere que se cumpla o no  el umbral: "number_of_changes >= 4"
+# sparkdf = sparkdf.filter(sparkdf.number_of_changes < 1)
 
 # añadir columna "process_date"
-sparkdf = sparkdf.withColumn("process_date", f.lit(PROCESS_DATE))
+sparkdf = sparkdf.withColumn("process_date", lit(PROCESS_DATE))
 
 # Ordenamiento de columnas
 sparkdf = sparkdf.select("found_at", "class", "value", "number_of_changes",\
@@ -136,6 +139,12 @@ sparkdf.show(truncate = False)
 print("Generando script INSERT...")
 pandasdf = sparkdf.toPandas()
 
+# Las siguientes líneas son a los efectos que la carga sea rápida y probar fallos
+# Muestreo aleatorio de 1000 registros
+random.seed(0)
+selected_dates = random.sample(list(pandasdf['found_at'].unique()), k=1000) 
+pandasdf = pandasdf[pandasdf['found_at'].isin(selected_dates)]
+
 with open (INSERTION_SCRIPT_PATH, 'w') as f:
     for index, row in pandasdf.iterrows():
         values = f"('{row['found_at']}', '{row['class']}', {row['value']}, {row['number_of_changes']},\
@@ -145,6 +154,10 @@ with open (INSERTION_SCRIPT_PATH, 'w') as f:
             {row['airport_latitude']}, {row['airport_longitude']}, '{row['process_date']}')"
         insert = f"INSERT INTO {env['REDSHIFT_SCHEMA']}.airplane_tickets VALUES {values};\n"
         f.write(insert)
+
+# Lo guardamos como csv
+pandasdf.to_csv('/opt/airflow/tmp/data/airplane_tickets_{}.csv'.format(PROCESS_DATE), index= False)
+
 
 
 
